@@ -1,18 +1,36 @@
 import { useState } from "react";
-import type { ButtonConfig, DeviceInfo } from "@/App";
+import type { ButtonConfig, DeviceInfo, Profile } from "@/App";
 import MappingView from "@/components/views/MappingView";
 import CustomizeView from "@/components/views/CustomizeView";
+import ProfileManager from "@/components/ProfileManager";
 
 interface DashboardProps {
   device: DeviceInfo;
-  buttons: ButtonConfig[];
+  profiles: Profile[];
+  activeProfileId: string;
+  activeProfile: Profile;
+  setActiveProfileId: (id: string) => void;
   setButtons: React.Dispatch<React.SetStateAction<ButtonConfig[]>>;
+  addProfile: (name: string) => string;
+  renameProfile: (id: string, name: string) => void;
+  deleteProfile: (id: string) => void;
   onDisconnect: () => void;
 }
 
 type Section = "workspace" | "customize" | "profiles" | "settings";
 
-export default function Dashboard({ device, buttons, setButtons, onDisconnect }: DashboardProps) {
+export default function Dashboard({
+  device,
+  profiles,
+  activeProfileId,
+  activeProfile,
+  setActiveProfileId,
+  setButtons,
+  addProfile,
+  renameProfile,
+  deleteProfile,
+  onDisconnect,
+}: DashboardProps) {
   const [section, setSection] = useState<Section>("workspace");
 
   const nav = [
@@ -42,17 +60,15 @@ export default function Dashboard({ device, buttons, setButtons, onDisconnect }:
         <nav className="flex-1 space-y-0.5 p-2">
           {nav.map((s) => {
             const active = section === s.id;
-            const disabled = s.id === "profiles" || s.id === "settings";
             return (
               <button
                 key={s.id}
-                onClick={() => !disabled && setSection(s.id)}
-                disabled={disabled}
+                onClick={() => setSection(s.id)}
                 data-active={active || undefined}
                 className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                  disabled
-                    ? "text-muted-foreground/50 cursor-not-allowed"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground data-[active]:bg-secondary data-[active]:text-foreground data-[active]:font-medium"
+                  active
+                    ? "bg-secondary text-foreground font-medium"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}
               >
                 <svg className="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -79,12 +95,17 @@ export default function Dashboard({ device, buttons, setButtons, onDisconnect }:
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        {section === "workspace" && <MappingView buttons={buttons} setButtons={setButtons} />}
-        {section === "customize" && <CustomizeView buttons={buttons} setButtons={setButtons} />}
+        {section === "workspace" && <MappingView buttons={activeProfile.buttons} setButtons={setButtons} />}
+        {section === "customize" && <CustomizeView buttons={activeProfile.buttons} setButtons={setButtons} profiles={profiles} />}
         {section === "profiles" && (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">Profiles — coming soon</p>
-          </div>
+          <ProfileManager
+            profiles={profiles}
+            activeProfileId={activeProfileId}
+            setActiveProfileId={setActiveProfileId}
+            addProfile={addProfile}
+            renameProfile={renameProfile}
+            deleteProfile={deleteProfile}
+          />
         )}
         {section === "settings" && (
           <div className="flex h-full items-center justify-center">

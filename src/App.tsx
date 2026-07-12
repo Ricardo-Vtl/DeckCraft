@@ -7,13 +7,22 @@ export interface AppInfo {
   path: string;
 }
 
+export interface Profile {
+  id: string;
+  name: string;
+  buttons: ButtonConfig[];
+}
+
 export interface ButtonConfig {
   id: string;
   label: string;
   action:
     | { type: "key"; keys: string[] }
     | { type: "executable"; name: string; path: string; icon?: string }
-    | { type: "launch"; path: string };
+    | { type: "launch"; path: string }
+    | { type: "url"; url: string }
+    | { type: "text"; text: string }
+    | { type: "navigate"; target: "next" | "prev" | "profile"; profile?: string };
 }
 
 export interface DeviceInfo {
@@ -22,9 +31,43 @@ export interface DeviceInfo {
   type: "serial" | "hid";
 }
 
+let profileCounter = 0;
+
 export default function App() {
   const [device, setDevice] = useState<DeviceInfo | null>(null);
-  const [buttons, setButtons] = useState<ButtonConfig[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([
+    { id: "default", name: "Default", buttons: [] },
+  ]);
+  const [activeProfileId, setActiveProfileId] = useState("default");
+
+  const activeProfile = profiles.find((p) => p.id === activeProfileId)!;
+
+  const setButtons = (fn: React.SetStateAction<ButtonConfig[]>) => {
+    setProfiles((prev) =>
+      prev.map((p) =>
+        p.id === activeProfileId ? { ...p, buttons: typeof fn === "function" ? fn(p.buttons) : fn } : p,
+      ),
+    );
+  };
+
+  const addProfile = (name: string) => {
+    profileCounter++;
+    const id = `profile_${Date.now()}`;
+    setProfiles((prev) => [...prev, { id, name: name || `Profile ${profileCounter}`, buttons: [] }]);
+    return id;
+  };
+
+  const renameProfile = (id: string, name: string) => {
+    setProfiles((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+  };
+
+  const deleteProfile = (id: string) => {
+    if (profiles.length <= 1) return;
+    setProfiles((prev) => prev.filter((p) => p.id !== id));
+    if (activeProfileId === id) {
+      setActiveProfileId(profiles.find((p) => p.id !== id)!.id);
+    }
+  };
 
   if (!device) {
     return <WelcomeView onConnected={setDevice} />;
@@ -33,11 +76,18 @@ export default function App() {
   return (
     <Dashboard
       device={device}
-      buttons={buttons}
+      profiles={profiles}
+      activeProfileId={activeProfileId}
+      activeProfile={activeProfile}
+      setActiveProfileId={setActiveProfileId}
       setButtons={setButtons}
+      addProfile={addProfile}
+      renameProfile={renameProfile}
+      deleteProfile={deleteProfile}
       onDisconnect={() => {
         setDevice(null);
-        setButtons([]);
+        setProfiles([{ id: "default", name: "Default", buttons: [] }]);
+        setActiveProfileId("default");
       }}
     />
   );

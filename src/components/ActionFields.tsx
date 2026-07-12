@@ -1,29 +1,52 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import AppScannerDialog from "@/components/AppScannerDialog";
-import type { AppInfo } from "@/App";
+import type { AppInfo, Profile } from "@/App";
 
 interface ActionFieldsProps {
   actionType: string;
   payload: Record<string, string>;
   onChange: (key: string, value: string) => void;
+  profiles?: Profile[];
 }
 
 function KeyRecorder({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [recording, setRecording] = useState(false);
+  const refs = useRef<{ onChange: (v: string) => void }>({ onChange });
+  refs.current.onChange = onChange;
 
-  const record = async () => {
-    setRecording(true);
-    try {
-      const combo = await invoke<string>("capture_key_combo");
-      if (combo) onChange(combo);
-    } catch { /* ignore */ }
-    setRecording(false);
-  };
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.altKey) parts.push("Alt");
+    if (e.metaKey) parts.push("Win");
+
+    const key = e.key;
+    const mods = ["Control", "Shift", "Alt", "Meta", "OS"];
+    if (!mods.includes(key)) {
+      const mapped = key === " " ? "Space" : key.length === 1 ? key.toUpperCase() : key;
+      parts.push(mapped);
+      refs.current.onChange(parts.join("+"));
+      setRecording(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [recording, handleKeyDown]);
+
+  const start = () => setRecording(true);
+  const cancel = () => setRecording(false);
 
   if (recording) {
     return (
@@ -31,6 +54,7 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (v: string)
         <div className="flex h-9 flex-1 items-center rounded-md border border-primary bg-secondary px-3 text-sm text-foreground animate-pulse">
           Press a key combination...
         </div>
+        <Button variant="ghost" size="sm" onClick={cancel}>Cancel</Button>
       </div>
     );
   }
@@ -44,7 +68,7 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (v: string)
         onChange={(e) => onChange(e.target.value)}
         className="flex-1"
       />
-      <Button variant="outline" size="sm" onClick={record}>
+      <Button variant="outline" size="sm" onClick={start}>
         <svg className="mr-1 size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <circle cx="12" cy="12" r="6" />
           <circle cx="12" cy="12" r="2" fill="currentColor" />
@@ -55,7 +79,7 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-export default function ActionFields({ actionType, payload, onChange }: ActionFieldsProps) {
+export default function ActionFields({ actionType, payload, onChange, profiles }: ActionFieldsProps) {
   const [scannerOpen, setScannerOpen] = useState(false);
 
   switch (actionType) {
@@ -63,13 +87,8 @@ export default function ActionFields({ actionType, payload, onChange }: ActionFi
       return (
         <div className="space-y-1.5">
           <Label htmlFor="keys">Key combination</Label>
-          <KeyRecorder
-            value={payload.keys ?? ""}
-            onChange={(v) => onChange("keys", v)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Capturado a nivel de sistema — hasta combinaciones de sistema como Win+R.
-          </p>
+          <KeyRecorder value={payload.keys ?? ""} onChange={(v) => onChange("keys", v)} />
+          <p className="text-xs text-muted-foreground">Captured at system level.</p>
         </div>
       );
 
@@ -120,36 +139,82 @@ export default function ActionFields({ actionType, payload, onChange }: ActionFi
         <div className="space-y-1.5">
           <Label htmlFor="path">Application path</Label>
           <div className="flex items-center gap-2">
-            <Input
-              id="path"
-              placeholder="e.g. C:\Program Files\...\app.exe"
-              value={payload.path ?? ""}
-              onChange={(e) => onChange("path", e.target.value)}
-              className="flex-1"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                const file = await open({
-                  multiple: false,
-                  filters: [
-                    { name: "Applications", extensions: ["exe", "bat", "cmd", "lnk", "com"] },
-                    { name: "All files", extensions: ["*"] },
-                  ],
-                });
-                if (file) onChange("path", file);
-              }}
-            >
+            <Input id="path" placeholder="e.g. C:\Program Files\...\app.exe" value={payload.path ?? ""} onChange={(e) => onChange("path", e.target.value)} className="flex-1" />
+            <Button variant="outline" size="sm" onClick={async () => {
+              const file = await open({
+                multiple: false,
+                filters: [
+                  { name: "Applications", extensions: ["exe", "bat", "cmd", "lnk", "com"] },
+                  { name: "All files", extensions: ["*"] },
+                ],
+              });
+              if (file) onChange("path", file);
+            }}>
               <svg className="mr-1 size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
               Browse
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Select the .exe file using the native Windows file browser.
-          </p>
+        </div>
+      );
+
+    case "url":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor="url">URL</Label>
+          <Input id="url" placeholder="https://example.com" value={payload.url ?? ""} onChange={(e) => onChange("url", e.target.value)} />
+          <p className="text-xs text-muted-foreground">Opens the URL in your default browser.</p>
+        </div>
+      );
+
+    case "text":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor="text">Text to type</Label>
+          <textarea
+            id="text"
+            placeholder="Hello, world!"
+            value={payload.text ?? ""}
+            onChange={(e) => onChange("text", e.target.value)}
+            className="flex min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <p className="text-xs text-muted-foreground">Types the text using keyboard simulation.</p>
+        </div>
+      );
+
+    case "navigate":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="target">Target</Label>
+            <select
+              id="target"
+              value={payload.target ?? "next"}
+              onChange={(e) => onChange("target", e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="next">Next profile</option>
+              <option value="prev">Previous profile</option>
+              <option value="profile">Specific profile</option>
+            </select>
+          </div>
+          {payload.target === "profile" && profiles && (
+            <div className="space-y-1.5">
+              <Label htmlFor="profileId">Profile</Label>
+              <select
+                id="profileId"
+                value={payload.profileId ?? ""}
+                onChange={(e) => onChange("profileId", e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Select...</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       );
 

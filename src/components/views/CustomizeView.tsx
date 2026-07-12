@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   DndContext,
   pointerWithin,
@@ -11,20 +11,20 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { AppInfo, ButtonConfig } from "@/App";
+import type { AppInfo, ButtonConfig, Profile } from "@/App";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import AppScannerDialog from "@/components/AppScannerDialog";
 
 interface CustomizeViewProps {
   buttons: ButtonConfig[];
   setButtons: React.Dispatch<React.SetStateAction<ButtonConfig[]>>;
+  profiles?: Profile[];
 }
 
-type ActionMode = "executable" | "key" | "launch";
+type ActionMode = "executable" | "key" | "launch" | "url" | "text" | "navigate";
 
 function SwapButton({
   button,
@@ -84,7 +84,7 @@ function DragCard({ button }: { button: ButtonConfig }) {
   );
 }
 
-export default function CustomizeView({ buttons, setButtons }: CustomizeViewProps) {
+export default function CustomizeView({ buttons, setButtons, profiles }: CustomizeViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [gridCols, setGridCols] = useState(4);
@@ -102,6 +102,10 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
   const [editExeName, setEditExeName] = useState("");
   const [editExePath, setEditExePath] = useState("");
   const [editLaunchPath, setEditLaunchPath] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editText, setEditText] = useState("");
+  const [editTarget, setEditTarget] = useState<"next" | "prev" | "profile">("next");
+  const [editProfileId, setEditProfileId] = useState("");
 
   const selectButton = (id: string) => {
     const btn = buttons.find((b) => b.id === id);
@@ -109,25 +113,51 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
     setSelectedId(id);
     setEditLabel(btn.label);
 
+    const resetCommon = () => {
+      setEditKeys("");
+      setEditExeName("");
+      setEditExePath("");
+      setEditLaunchPath("");
+      setEditUrl("");
+      setEditText("");
+      setEditTarget("next");
+      setEditProfileId("");
+    };
+
     const a = btn.action;
-    if (a.type === "key") {
-      setEditActionMode("key");
-      setEditKeys(a.keys.join("+"));
-      setEditExeName("");
-      setEditExePath("");
-      setEditLaunchPath("");
-    } else if (a.type === "executable") {
-      setEditActionMode("executable");
-      setEditKeys("");
-      setEditExeName(a.name);
-      setEditExePath(a.path);
-      setEditLaunchPath("");
-    } else {
-      setEditActionMode("launch");
-      setEditKeys("");
-      setEditExeName("");
-      setEditExePath("");
-      setEditLaunchPath(a.path);
+    switch (a.type) {
+      case "key":
+        resetCommon();
+        setEditActionMode("key");
+        setEditKeys(a.keys.join("+"));
+        break;
+      case "executable":
+        resetCommon();
+        setEditActionMode("executable");
+        setEditExeName(a.name);
+        setEditExePath(a.path);
+        break;
+      case "launch":
+        resetCommon();
+        setEditActionMode("launch");
+        setEditLaunchPath(a.path);
+        break;
+      case "url":
+        resetCommon();
+        setEditActionMode("url");
+        setEditUrl(a.url);
+        break;
+      case "text":
+        resetCommon();
+        setEditActionMode("text");
+        setEditText(a.text);
+        break;
+      case "navigate":
+        resetCommon();
+        setEditActionMode("navigate");
+        setEditTarget(a.target);
+        setEditProfileId(a.profile ?? "");
+        break;
     }
   };
 
@@ -143,6 +173,15 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
         break;
       case "launch":
         action = { type: "launch", path: editLaunchPath };
+        break;
+      case "url":
+        action = { type: "url", url: editUrl };
+        break;
+      case "text":
+        action = { type: "text", text: editText };
+        break;
+      case "navigate":
+        action = { type: "navigate", target: editTarget, profile: editTarget === "profile" ? editProfileId : undefined };
         break;
     }
     setButtons((prev) => prev.map((b) => (b.id === selectedId ? { ...b, label: editLabel, action } : b)));
@@ -240,13 +279,11 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
               <div className="space-y-1">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Action</span>
 
-                {/* 1. Quick App — scan system */}
+                {/* 1. Quick App */}
                 <label
                   data-active={editActionMode === "executable" || undefined}
                   className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
-                    editActionMode === "executable"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-secondary"
+                    editActionMode === "executable" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -259,10 +296,7 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Add Executable</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Scan system for installed applications
-                      </p>
-
+                      <p className="text-xs text-muted-foreground mt-0.5">Scan system for installed applications</p>
                       {editActionMode === "executable" && (
                         <div className="mt-3 space-y-3">
                           {editExePath ? (
@@ -299,9 +333,7 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
                 <label
                   data-active={editActionMode === "key" || undefined}
                   className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
-                    editActionMode === "key"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-secondary"
+                    editActionMode === "key" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -314,19 +346,11 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Key Recorder</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Press a key combination to record it
-                      </p>
-
+                      <p className="text-xs text-muted-foreground mt-0.5">Press a key combination to record it</p>
                       {editActionMode === "key" && (
                         <div className="mt-3">
                           <KeyRecorderInline value={editKeys} onChange={setEditKeys} />
-                          <p className="text-xs text-muted-foreground mt-1.5">
-                            Click Record and press your key combination, then click Save.
-                          </p>
-                          <p className="text-xs text-muted-foreground/60 mt-0.5">
-                            Capturado a nivel de sistema — cualquier combinación funciona.
-                          </p>
+                          <p className="text-xs text-muted-foreground mt-1.5">Click Record and press your key combination.</p>
                         </div>
                       )}
                     </div>
@@ -337,9 +361,7 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
                 <label
                   data-active={editActionMode === "launch" || undefined}
                   className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
-                    editActionMode === "launch"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-secondary"
+                    editActionMode === "launch" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -352,35 +374,128 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Application App</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Browse for any executable on your system
-                      </p>
-
+                      <p className="text-xs text-muted-foreground mt-0.5">Browse for any executable on your system</p>
                       {editActionMode === "launch" && (
                         <div className="mt-3 flex items-center gap-2">
-                          <Input
-                            placeholder="C:\Path\to\app.exe"
-                            value={editLaunchPath}
-                            onChange={(e) => setEditLaunchPath(e.target.value)}
-                            className="flex-1 h-8 text-xs"
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={async () => {
-                              const file = await open({
-                                multiple: false,
-                                filters: [
-                                  { name: "Applications", extensions: ["exe", "bat", "cmd", "lnk", "com"] },
-                                  { name: "All files", extensions: ["*"] },
-                                ],
-                              });
-                              if (file) setEditLaunchPath(file);
-                            }}
-                          >
+                          <Input placeholder="C:\Path\to\app.exe" value={editLaunchPath} onChange={(e) => setEditLaunchPath(e.target.value)} className="flex-1 h-8 text-xs" />
+                          <Button variant="outline" size="sm" className="shrink-0" onClick={async () => {
+                            const file = await open({
+                              multiple: false,
+                              filters: [
+                                { name: "Applications", extensions: ["exe", "bat", "cmd", "lnk", "com"] },
+                                { name: "All files", extensions: ["*"] },
+                              ],
+                            });
+                            if (file) setEditLaunchPath(file);
+                          }}>
                             Browse
                           </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </label>
+
+                {/* 4. Open URL */}
+                <label
+                  data-active={editActionMode === "url" || undefined}
+                  className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
+                    editActionMode === "url" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="action-mode"
+                      checked={editActionMode === "url"}
+                      onChange={() => setEditActionMode("url")}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Open URL</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Opens a URL in your default browser</p>
+                      {editActionMode === "url" && (
+                        <div className="mt-3">
+                          <Input placeholder="https://example.com" value={editUrl} onChange={(e) => setEditUrl(e.target.value)} className="h-8 text-xs" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </label>
+
+                {/* 5. Type Text */}
+                <label
+                  data-active={editActionMode === "text" || undefined}
+                  className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
+                    editActionMode === "text" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="action-mode"
+                      checked={editActionMode === "text"}
+                      onChange={() => setEditActionMode("text")}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Type Text</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Types text using keyboard simulation</p>
+                      {editActionMode === "text" && (
+                        <div className="mt-3">
+                          <textarea
+                            placeholder="Hello, world!"
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            className="flex min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </label>
+
+                {/* 6. Profile Switch */}
+                <label
+                  data-active={editActionMode === "navigate" || undefined}
+                  className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
+                    editActionMode === "navigate" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="action-mode"
+                      checked={editActionMode === "navigate"}
+                      onChange={() => setEditActionMode("navigate")}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Profile Switch</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Switch to another profile</p>
+                      {editActionMode === "navigate" && (
+                        <div className="mt-3 space-y-2">
+                          <select
+                            value={editTarget}
+                            onChange={(e) => setEditTarget(e.target.value as "next" | "prev" | "profile")}
+                            className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <option value="next">Next profile</option>
+                            <option value="prev">Previous profile</option>
+                            <option value="profile">Specific profile</option>
+                          </select>
+                          {editTarget === "profile" && profiles && (
+                            <select
+                              value={editProfileId}
+                              onChange={(e) => setEditProfileId(e.target.value)}
+                              className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value="">Select...</option>
+                              {profiles.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
                       )}
                     </div>
@@ -414,15 +529,35 @@ export default function CustomizeView({ buttons, setButtons }: CustomizeViewProp
 /** Inline key recorder for the radio-button layout */
 function KeyRecorderInline({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [recording, setRecording] = useState(false);
+  const refs = useRef<{ onChange: (v: string) => void }>({ onChange });
+  refs.current.onChange = onChange;
 
-  const record = async () => {
-    setRecording(true);
-    try {
-      const combo = await invoke<string>("capture_key_combo");
-      if (combo) onChange(combo);
-    } catch { /* ignore */ }
-    setRecording(false);
-  };
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.altKey) parts.push("Alt");
+    if (e.metaKey) parts.push("Win");
+
+    const key = e.key;
+    const mods = ["Control", "Shift", "Alt", "Meta", "OS"];
+    if (!mods.includes(key)) {
+      const mapped = key === " " ? "Space" : key.length === 1 ? key.toUpperCase() : key;
+      parts.push(mapped);
+      refs.current.onChange(parts.join("+"));
+      setRecording(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [recording, handleKeyDown]);
 
   return (
     <div className="flex items-center gap-2">
@@ -435,24 +570,8 @@ function KeyRecorderInline({ value, onChange }: { value: string; onChange: (v: s
           <span className="text-muted-foreground">No keys recorded</span>
         )}
       </div>
-      <Button
-        variant={recording ? "default" : "outline"}
-        size="sm"
-        className="shrink-0"
-        onClick={record}
-        disabled={recording}
-      >
-        {recording ? (
-          <>Listening...</>
-        ) : (
-          <>
-            <svg className="mr-1 size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="12" r="6" />
-              <circle cx="12" cy="12" r="2" fill="currentColor" />
-            </svg>
-            Record
-          </>
-        )}
+      <Button variant={recording ? "default" : "outline"} size="sm" className="shrink-0" onClick={() => setRecording(true)}>
+        {recording ? <>Listening...</> : <><svg className="mr-1 size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" fill="currentColor" /></svg>Record</>}
       </Button>
     </div>
   );
