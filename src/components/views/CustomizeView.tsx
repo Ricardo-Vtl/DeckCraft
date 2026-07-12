@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   DndContext,
   pointerWithin,
@@ -30,10 +31,14 @@ function SwapButton({
   button,
   index,
   onClick,
+  lit,
+  onLitEnd,
 }: {
   button: ButtonConfig;
   index: number;
   onClick: () => void;
+  lit: boolean;
+  onLitEnd?: () => void;
 }) {
   const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({ id: button.id });
   const { setNodeRef: dropRef, isOver } = useDroppable({ id: button.id });
@@ -46,11 +51,12 @@ function SwapButton({
   return (
     <div
       ref={mergedRef}
+      onAnimationEnd={lit ? onLitEnd : undefined}
       className={`relative flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border bg-secondary transition-all cursor-pointer ${
         isDragging ? "opacity-20" : ""
       } ${
         isOver && !isDragging ? "border-primary ring-2 ring-primary/40 shadow-lg shadow-primary/10 scale-105" : "border-border"
-      }`}
+      } ${lit ? "animate-lit-flash" : ""}`}
     >
       <span className="absolute left-1.5 top-1.5 text-[10px] font-medium text-muted-foreground">
         #{index + 1}
@@ -89,6 +95,26 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
   const [activeId, setActiveId] = useState<string | null>(null);
   const [gridCols, setGridCols] = useState(4);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [litId, setLitId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let unsubDown: (() => void) | undefined;
+    let unsubUp: (() => void) | undefined;
+
+    listen<{ id: number }>("button-down", (event) => {
+      const btn = buttons.find((b) => b.physicalId === event.payload.id);
+      if (btn) {
+        setLitId(null);
+        requestAnimationFrame(() => setLitId(btn.id));
+      }
+    }).then((fn) => { unsubDown = fn; });
+
+    listen<{ id: number }>("button-up", () => {
+      setLitId(null);
+    }).then((fn) => { unsubUp = fn; });
+
+    return () => { unsubDown?.(); unsubUp?.(); };
+  }, [buttons]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -245,7 +271,7 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
               <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, 96px)` }}>
                 {buttons.map((btn, i) => (
                   <div key={btn.id} className="group" onClick={() => selectButton(btn.id)}>
-                    <SwapButton button={btn} index={i} onClick={() => selectButton(btn.id)} />
+                    <SwapButton button={btn} index={i} lit={btn.id === litId} onLitEnd={() => setLitId(null)} onClick={() => selectButton(btn.id)} />
                   </div>
                 ))}
               </div>
@@ -504,7 +530,7 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
               </div>
             </div>
 
-            <div className="flex items-center justify-end border-t border-border p-4">
+            <div className="flex items-center justify-between border-t border-border p-4">
               <Button size="sm" onClick={handleSave}>Save</Button>
             </div>
           </>
@@ -543,13 +569,35 @@ function KeyRecorderInline({ value, onChange }: { value: string; onChange: (v: s
     if (e.altKey) parts.push("Alt");
     if (e.metaKey) parts.push("Win");
 
-    const key = e.key;
-    const mods = ["Control", "Shift", "Alt", "Meta", "OS"];
-    if (!mods.includes(key)) {
-      const mapped = key === " " ? "Space" : key.length === 1 ? key.toUpperCase() : key;
-      parts.push(mapped);
-      refs.current.onChange(parts.join("+"));
-      setRecording(false);
+    const code = e.code;
+    const mods = ["ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"];
+    if (!mods.includes(code)) {
+      let mapped: string | null = null;
+      if (code.startsWith("Digit")) mapped = code.slice(5);
+      else if (code.startsWith("Key")) mapped = code.slice(3);
+      else if (code.startsWith("F") && !isNaN(Number(code.slice(1)))) mapped = code;
+      else if (code === "Space") mapped = "Space";
+      else if (code === "Enter") mapped = "Enter";
+      else if (code === "Backspace") mapped = "Backspace";
+      else if (code === "Tab") mapped = "Tab";
+      else if (code === "Escape") mapped = "Escape";
+      else if (code === "Delete") mapped = "Delete";
+      else if (code === "Home") mapped = "Home";
+      else if (code === "End") mapped = "End";
+      else if (code === "PageUp") mapped = "PageUp";
+      else if (code === "PageDown") mapped = "PageDown";
+      else if (code === "Insert") mapped = "Insert";
+      else if (code === "ArrowUp") mapped = "Up";
+      else if (code === "ArrowDown") mapped = "Down";
+      else if (code === "ArrowLeft") mapped = "Left";
+      else if (code === "ArrowRight") mapped = "Right";
+      // fallback: use e.key for media/unknown keys (Fn combos generate Media* events)
+      else if (e.key.startsWith("Media") || e.key.startsWith("Launch") || e.key.startsWith("Audio")) mapped = e.key;
+      if (mapped) {
+        parts.push(mapped);
+        refs.current.onChange(parts.join("+"));
+        setRecording(false);
+      }
     }
   }, []);
 

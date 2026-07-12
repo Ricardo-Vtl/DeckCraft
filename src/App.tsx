@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import WelcomeView from "@/components/views/WelcomeView";
 import Dashboard from "@/components/Dashboard";
+import { executeAction } from "@/lib/executeAction";
+import { message } from "@tauri-apps/plugin-dialog";
 
 export interface AppInfo {
   name: string;
@@ -16,6 +20,7 @@ export interface Profile {
 export interface ButtonConfig {
   id: string;
   label: string;
+  physicalId?: number;
   action:
     | { type: "key"; keys: string[] }
     | { type: "executable"; name: string; path: string; icon?: string }
@@ -28,7 +33,7 @@ export interface ButtonConfig {
 export interface DeviceInfo {
   name: string;
   port: string;
-  type: "serial" | "hid";
+  deviceType: "serial" | "hid";
 }
 
 let profileCounter = 0;
@@ -69,6 +74,41 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!device) return;
+    let unlisten: (() => void) | undefined;
+    listen("device-disconnected", () => { setDevice(null); }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [device]);
+
+  // Execute action when physical button is pressed
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
+  const activeProfileIdRef = useRef(activeProfileId);
+  activeProfileIdRef.current = activeProfileId;
+
+  useEffect(() => {
+    if (!device) return;
+    let unsub: (() => void) | undefined;
+    listen<{ id: number }>("button-down", (event) => {
+      const p = profilesRef.current.find((p) => p.id === activeProfileIdRef.current);
+      if (!p) return;
+      const btn = p.buttons.find((b) => b.physicalId === event.payload.id);
+      if (!btn) return;
+      executeAction(btn.action, profilesRef.current, activeProfileIdRef.current, setActiveProfileId).catch((err) => {
+        message(`${err}`, { title: "Action failed", kind: "error" });
+      });
+    }).then((fn) => { unsub = fn; });
+    return () => { unsub?.(); };
+  }, [device]);
+
+  const handleDisconnect = () => {
+    invoke("disconnect_device").catch(() => {});
+    setDevice(null);
+    setProfiles([{ id: "default", name: "Default", buttons: [] }]);
+    setActiveProfileId("default");
+  };
+
   if (!device) {
     return <WelcomeView onConnected={setDevice} />;
   }
@@ -84,11 +124,7 @@ export default function App() {
       addProfile={addProfile}
       renameProfile={renameProfile}
       deleteProfile={deleteProfile}
-      onDisconnect={() => {
-        setDevice(null);
-        setProfiles([{ id: "default", name: "Default", buttons: [] }]);
-        setActiveProfileId("default");
-      }}
+      onDisconnect={handleDisconnect}
     />
   );
 }

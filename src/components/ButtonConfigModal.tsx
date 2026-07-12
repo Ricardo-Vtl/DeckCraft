@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ActionFields from "@/components/ActionFields";
+import { executeAction } from "@/lib/executeAction";
 
 interface ButtonConfigModalProps {
   button: ButtonConfig;
   onSave: (updated: ButtonConfig) => void;
   onClose: () => void;
   profiles?: Profile[];
+  activeProfileId?: string;
+  onNavigate?: (profileId: string) => void;
 }
 
 const ACTION_OPTIONS = [
@@ -27,6 +30,8 @@ export default function ButtonConfigModal({
   onSave,
   onClose,
   profiles,
+  activeProfileId,
+  onNavigate,
 }: ButtonConfigModalProps) {
   const [label, setLabel] = useState(button.label);
   const [actionType, setActionType] = useState(button.action.type);
@@ -42,37 +47,35 @@ export default function ButtonConfigModal({
   })() as Record<string, string>;
   const [payload, setPayload] = useState<Record<string, string>>(initialPayload);
 
-  const handleSave = () => {
-    let action: ButtonConfig["action"];
-
+  const buildAction = (): ButtonConfig["action"] => {
     switch (actionType) {
       case "key":
-        action = { type: "key", keys: payload.keys ? payload.keys.split("+").map((k) => k.trim()) : [] };
-        break;
+        return { type: "key", keys: payload.keys ? payload.keys.split("+").map((k) => k.trim()) : [] };
       case "executable":
-        action = { type: "executable", name: payload.name ?? "", path: payload.path ?? "" };
-        break;
+        return { type: "executable", name: payload.name ?? "", path: payload.path ?? "" };
       case "launch":
-        action = { type: "launch", path: payload.path ?? "" };
-        break;
+        return { type: "launch", path: payload.path ?? "" };
       case "url":
-        action = { type: "url", url: payload.url ?? "" };
-        break;
+        return { type: "url", url: payload.url ?? "" };
       case "text":
-        action = { type: "text", text: payload.text ?? "" };
-        break;
+        return { type: "text", text: payload.text ?? "" };
       case "navigate":
-        action = {
+        return {
           type: "navigate",
           target: (payload.target as "next" | "prev" | "profile") ?? "next",
           profile: payload.profileId || undefined,
         };
-        break;
       default:
-        action = button.action;
+        return button.action;
     }
+  };
 
-    onSave({ ...button, label, action });
+  const handleSave = () => {
+    onSave({ ...button, label, action: buildAction() });
+  };
+
+  const handleTest = () => {
+    executeAction(buildAction(), profiles ?? [], activeProfileId ?? "", (id) => onNavigate?.(id));
   };
 
   return (
@@ -112,11 +115,19 @@ export default function ButtonConfigModal({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+        <div className="flex justify-between gap-2 pt-2">
+          <Button variant="outline" onClick={handleTest}>
+            <svg className="mr-1 size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+            </svg>
+            Test
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave}>Save</Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

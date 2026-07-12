@@ -95,7 +95,7 @@ export default function Dashboard({
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        {section === "workspace" && <MappingView buttons={activeProfile.buttons} setButtons={setButtons} />}
+        {section === "workspace" && <MappingView buttons={activeProfile.buttons} setButtons={setButtons} profiles={profiles} activeProfileId={activeProfileId} onNavigate={setActiveProfileId} />}
         {section === "customize" && <CustomizeView buttons={activeProfile.buttons} setButtons={setButtons} profiles={profiles} />}
         {section === "profiles" && (
           <ProfileManager

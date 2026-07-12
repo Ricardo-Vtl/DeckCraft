@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   DndContext,
   pointerWithin,
@@ -11,13 +12,16 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { ButtonConfig } from "@/App";
+import type { ButtonConfig, Profile } from "@/App";
 import { Button } from "@/components/ui/button";
 import ButtonConfigModal from "@/components/ButtonConfigModal";
 
 interface MappingViewProps {
   buttons: ButtonConfig[];
   setButtons: React.Dispatch<React.SetStateAction<ButtonConfig[]>>;
+  profiles?: Profile[];
+  activeProfileId?: string;
+  onNavigate?: (profileId: string) => void;
 }
 
 function SwapButton({
@@ -26,12 +30,16 @@ function SwapButton({
   onClick,
   onDelete,
   dragEnabled,
+  lit,
+  onLitEnd,
 }: {
   button: ButtonConfig;
   index: number;
   onClick: () => void;
   onDelete: () => void;
   dragEnabled: boolean;
+  lit: boolean;
+  onLitEnd?: () => void;
 }) {
   const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({
     id: button.id,
@@ -49,11 +57,12 @@ function SwapButton({
   return (
     <div
       ref={mergedRef}
+      onAnimationEnd={lit ? onLitEnd : undefined}
       className={`group relative flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border bg-secondary transition-all ${
         isDragging ? "opacity-20" : ""
       } ${
         isOver && !isDragging ? "border-primary ring-2 ring-primary/40 shadow-lg shadow-primary/10 scale-105" : "border-border"
-      }`}
+      } ${lit ? "animate-lit-flash" : ""}`}
     >
       <span className="absolute left-1.5 top-1.5 text-[10px] font-medium text-muted-foreground">
         #{index + 1}
@@ -106,25 +115,53 @@ function DragCard({ button }: { button: ButtonConfig }) {
   );
 }
 
-export default function MappingView({ buttons, setButtons }: MappingViewProps) {
-  const [mapping, setMapping] = useState(buttons.length === 0);
+export default function MappingView({ buttons, setButtons, profiles, activeProfileId, onNavigate }: MappingViewProps) {
+  const [mapping, setMapping] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [gridCols, setGridCols] = useState(4);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [litId, setLitId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
-  const handleSimulatePress = () => {
-    const id = crypto.randomUUID();
-    const nextNum = buttons.length + 1;
-    const newButton: ButtonConfig = {
-      id,
-      label: `Button ${nextNum}`,
-      action: { type: "key", keys: [] },
-    };
-    setButtons((prev) => [...prev, newButton]);
+  // Listen for button-press events when in mapping mode
+  const mappingRef = useRef(mapping);
+  mappingRef.current = mapping;
+  const setButtonsRef = useRef(setButtons);
+  setButtonsRef.current = setButtons;
+
+  useEffect(() => {
+    let unsubDown: (() => void) | undefined;
+    let unsubUp: (() => void) | undefined;
+
+    listen<{ id: number }>("button-down", (event) => {
+      const physId = event.payload.id;
+      setButtonsRef.current((prev) => {
+        const existing = prev.find((b) => b.physicalId === physId);
+        if (existing) {
+          setLitId(null);
+          requestAnimationFrame(() => setLitId(existing.id));
+          return prev;
+        }
+        if (!mappingRef.current) return prev;
+        const fresh: ButtonConfig = { id: crypto.randomUUID(), label: `Button ${prev.length + 1}`, action: { type: "key", keys: [] }, physicalId: physId };
+        setLitId(fresh.id);
+        return [...prev, fresh];
+      });
+    }).then((fn) => { unsubDown = fn; });
+
+    listen<{ id: number }>("button-up", () => {
+      setLitId(null);
+    }).then((fn) => { unsubUp = fn; });
+
+    return () => { unsubDown?.(); unsubUp?.(); };
+  }, []);
+
+  const handleStartMapping = () => {
+    setButtons([]);
+    setMapping(true);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -140,7 +177,6 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
     const newIndex = buttons.findIndex((b) => b.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    // Swap positions
     const swapped = [...buttons];
     [swapped[oldIndex], swapped[newIndex]] = [swapped[newIndex], swapped[oldIndex]];
     setButtons(swapped);
@@ -198,20 +234,13 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
         <div className="flex-1" />
 
         {mapping && (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={handleSimulatePress}>
-              Simulate press
-            </Button>
-            {buttons.length > 0 && (
-              <Button size="sm" onClick={() => setMapping(false)}>
-                Finish ({buttons.length})
-              </Button>
-            )}
-          </div>
+          <Button size="sm" variant={buttons.length > 0 ? "default" : "secondary"} onClick={() => setMapping(false)}>
+            {buttons.length > 0 ? `Finish (${buttons.length})` : "Cancel"}
+          </Button>
         )}
 
         {!mapping && buttons.length > 0 && (
-          <Button size="sm" variant="outline" onClick={() => { setButtons([]); setMapping(true); }}>
+          <Button size="sm" variant="outline" onClick={handleStartMapping}>
             Remap
           </Button>
         )}
@@ -219,7 +248,7 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {buttons.length === 0 ? (
+        {buttons.length === 0 && !mapping ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <div className="flex size-16 items-center justify-center rounded-full bg-secondary">
               <svg className="size-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -232,9 +261,19 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
                 Click "Start mapping" and press each physical button on your board.
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={handleSimulatePress}>
+            <Button variant="outline" size="sm" onClick={handleStartMapping}>
               Start mapping
             </Button>
+          </div>
+        ) : buttons.length === 0 && mapping ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4">
+            <div className="size-8 animate-pulse rounded-full bg-primary" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">Press a button on your board</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Each physical press will create a button here.
+              </p>
+            </div>
           </div>
         ) : (
           <DndContext
@@ -250,6 +289,8 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
                   button={btn}
                   index={i}
                   dragEnabled={!mapping}
+                  lit={btn.id === litId}
+                  onLitEnd={() => setLitId(null)}
                   onClick={() => setEditingId(btn.id)}
                   onDelete={() => handleDelete(btn.id)}
                 />
@@ -272,6 +313,9 @@ export default function MappingView({ buttons, setButtons }: MappingViewProps) {
             setEditingId(null);
           }}
           onClose={() => setEditingId(null)}
+          profiles={profiles}
+          activeProfileId={activeProfileId}
+          onNavigate={onNavigate}
         />
       )}
     </div>

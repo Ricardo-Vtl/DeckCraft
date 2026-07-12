@@ -2,19 +2,19 @@
 
 Turn any programmable board into a custom Stream Deck.
 
-DeckCraft is a Windows desktop application that detects Arduino and compatible boards over Serial or HID, maps their physical buttons to keyboard shortcuts, app launches, macros, and more -- all through a drag-and-drop interface.
+DeckCraft is a Windows desktop application that detects Arduino and compatible boards over Serial or HID, maps their physical buttons to keyboard shortcuts, app launches, macros, and more — all through a simple interface.
 
 Built with Tauri v2, React 19, and Rust for a native, low-latency experience.
 
 ## Features
 
-- **Auto-detection** -- Scans Serial and HID ports, identifies connected boards, and selects the right protocol without user input.
-- **Physical mapping wizard** -- Press each switch on your board; DeckCraft creates a visual node on the canvas automatically.
-- **Drag-and-drop canvas** -- Arrange your buttons freely with snap-to-grid support.
-- **Per-button actions** -- Assign key combinations, launch executables, open URLs, type text, run shell commands, or navigate profiles.
-- **Profiles and pages** -- Organize actions into multiple profiles with pagination for unlimited buttons per board.
-- **Background mode** -- For non-HID boards, DeckCraft minimizes to system tray to keep working as a keyboard bridge.
-- **Protocol-agnostic** -- Uses plain-text `P:<id>` signaling to keep Arduino firmware lightweight (works within 2KB RAM).
+- **Serial/HID scanning** — Scans ports and identifies connected programmable boards (Arduino, FTDI, CH340, ESP32, RP2040, etc.)
+- **Physical mapping wizard** — Enter mapping mode, press each switch on your board; DeckCraft creates a button node automatically
+- **Visual grid canvas** — Arrange and reorder buttons via drag-and-drop with configurable grid columns
+- **Per-button actions** — Assign key combinations (SendInput), launch executables/`.lnk`/`.url`, open URLs, type text, or switch profiles
+- **Profile system** — Create, rename, and delete profiles with independent button layouts
+- **Real-time visual feedback** — Pressed buttons light up on the canvas with a CSS animation
+- **Protocol-agnostic** — Uses plain-text `P:<id>\n` / `R:<id>\n` signaling; Arduino firmware is lightweight
 
 ## Tech Stack
 
@@ -28,8 +28,7 @@ Built with Tauri v2, React 19, and Rust for a native, low-latency experience.
 | Drag and drop | @dnd-kit |
 | HID communication | hidapi (Rust) |
 | Serial communication | serialport (Rust) |
-| Keyboard emulation | enigo (Rust) |
-| Storage | Local JSON files |
+| Keyboard emulation | Win32 SendInput (Rust) |
 
 ## Project Structure
 
@@ -39,25 +38,21 @@ deckcraft/
 │   ├── components/
 │   │   ├── ui/             # shadcn/ui primitives
 │   │   ├── views/          # App views (Welcome, Mapping, Customize)
+│   │   ├── lib/            # Action execution logic
 │   │   ├── Dashboard.tsx   # Main layout after connection
-│   │   ├── ButtonConfigModal.tsx
-│   │   └── ActionFields.tsx
-│   ├── lib/utils.ts
+│   │   └── ...
 │   ├── App.tsx             # Root component
 │   ├── main.tsx            # Entry point
 │   └── index.css           # Tailwind + CSS variables
 ├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── lib.rs          # Tauri commands (scan_apps, etc.)
+│   │   ├── lib.rs          # Tauri commands (serial, HID, SendInput)
 │   │   └── main.rs         # Entry point
 │   ├── capabilities/       # Permission grants
-│   ├── tauri.conf.json     # Tauri configuration
 │   └── Cargo.toml
-├── public/                 # Static assets
+├── public/
 ├── index.html
-├── vite.config.ts
-├── components.json         # shadcn/ui configuration
-└── package.json
+└── vite.config.ts
 ```
 
 ## Getting Started
@@ -96,7 +91,7 @@ pnpm tauri build
 
 ## Architecture
 
-DeckCraft follows a clear split: **Rust handles all hardware interaction** (Serial/HID detection, keyboard emulation via enigo, file I/O, system tray), while **React handles only the UI**. Communication goes through Tauri's IPC (`invoke`/events).
+DeckCraft follows a clear split: **Rust handles all hardware interaction** (Serial/HID detection, keyboard emulation via Win32 SendInput) while **React handles the UI**. Communication goes through Tauri's IPC (`invoke`/events).
 
 ```
 ┌─────────────────────────────────────────┐
@@ -105,8 +100,8 @@ DeckCraft follows a clear split: **Rust handles all hardware interaction** (Seri
 │  │  Frontend (React) │  │ Backend(Rust)││
 │  │  - Canvas editor  │  │ - hidapi     ││
 │  │  - Button mapping │  │ - serialport ││
-│  │  - Profile mgmt   │  │ - enigo      ││
-│  │  - Drag and drop  │  │ - System tray││
+│  │  - Profile mgmt   │  │ - SendInput  ││
+│  │  - Drag and drop  │  │ - Shell exec ││
 │  └────────┬─────────┘  └──────┬───────┘│
 │           │  IPC (invoke)     │         │
 │           └───────────────────┘         │
@@ -115,14 +110,13 @@ DeckCraft follows a clear split: **Rust handles all hardware interaction** (Seri
 
 ### Board Protocol
 
-The board-to-PC protocol is minimal by design: `P:<button_id>\n` over Serial. The PC auto-releases keys after 50ms, keeping Arduino firmware under 2KB RAM. PC-to-board commands use a slightly richer text format for configuration (`PAGE:<n>`, `PROFILE:<name>`, `LED:<id>:<r,g,b>`, `RESET`).
+The board sends `P:<id>\n` on button press and `R:<id>\n` on button release over Serial at 115200 baud. The app uses the `id` to look up the configured action in the active profile. Arduino firmware with debounce is provided in the project.
 
 ## Roadmap
 
-- **Phase 1 -- MVP**: Serial scanning, mapping UI, drag-and-drop canvas, key recording, app launching, single profile save/load, keyboard bridge, system tray.
-- **Phase 2 -- Profiles**: Multiple profiles, pages/layers, navigation buttons, import/export.
-- **Phase 3 -- HID**: HID detection and communication, multi-action per button, sustain mode, text/URL/command actions, LED feedback.
-- **Phase 4 -- Polish**: Auto-start, auto-reconnect, themes, i18n.
+- **Phase 1 — MVP** ✅ Serial scanning, mapping wizard, drag-and-drop canvas, key recording (e.code), app launching (.exe/.lnk/.url), profiles, SendInput keyboard emulation, CSS-animated press feedback
+- **Phase 2 — HID** HID detection and communication, multi-action per button
+- **Phase 3 — Polish** Auto-start, auto-reconnect, themes, i18n
 
 ## License
 
