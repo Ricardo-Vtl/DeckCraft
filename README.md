@@ -19,17 +19,17 @@ Built with Tauri v2, React 19, and Rust for a native, low-latency experience.
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop shell | Tauri v2 (Rust) |
-| Frontend | React 19, TypeScript 5.8 |
-| Build tool | Vite 7 |
-| Styling | Tailwind CSS v4 |
-| UI components | shadcn/ui (Radix Primitives) |
-| Drag and drop | @dnd-kit |
-| HID communication | hidapi (Rust) |
-| Serial communication | serialport (Rust) |
-| Keyboard emulation | Win32 SendInput (Rust) |
+| Layer                | Technology                   |
+| -------------------- | ---------------------------- |
+| Desktop shell        | Tauri v2 (Rust)              |
+| Frontend             | React 19, TypeScript 5.8     |
+| Build tool           | Vite 7                       |
+| Styling              | Tailwind CSS v4              |
+| UI components        | shadcn/ui (Radix Primitives) |
+| Drag and drop        | @dnd-kit                     |
+| HID communication    | hidapi (Rust)                |
+| Serial communication | serialport (Rust)            |
+| Keyboard emulation   | Win32 SendInput (Rust)       |
 
 ## Project Structure
 
@@ -82,13 +82,13 @@ pnpm tauri build
 
 ### Commands
 
-| Action | Command |
-|--------|---------|
-| Dev server | `pnpm dev` |
-| Build frontend | `pnpm build` (`tsc && vite build`) |
-| Run Tauri app | `pnpm tauri dev` |
-| Build Tauri bundle | `pnpm tauri build` |
-| Add shadcn component | `pnpm tauri ui add <name>` |
+| Action               | Command                            |
+| -------------------- | ---------------------------------- |
+| Dev server           | `pnpm dev`                         |
+| Build frontend       | `pnpm build` (`tsc && vite build`) |
+| Run Tauri app        | `pnpm tauri dev`                   |
+| Build Tauri bundle   | `pnpm tauri build`                 |
+| Add shadcn component | `pnpm tauri ui add <name>`         |
 
 ## Architecture
 
@@ -119,7 +119,7 @@ DeckCraft can play audio files (`.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`, `.aac`,
 
 ### Why Voicemeeter Banana?
 
-To play audio through Discord, voice chats, or any application, the audio must reach your system's **microphone input**. Windows does not allow apps to inject audio directly into a microphone. 
+To play audio through Discord, voice chats, or any application, the audio must reach your system's **microphone input**. Windows does not allow apps to inject audio directly into a microphone.
 
 [**Voicemeeter Banana**](https://vb-audio.com/Voicemeeter/banana.htm) is a free virtual audio mixer that solves this by:
 
@@ -139,11 +139,11 @@ Download and install [Voicemeeter Banana](https://vb-audio.com/Voicemeeter/banan
 
 Open Voicemeeter Banana. You will see three input columns and output selectors:
 
-| Section | What to do |
-|---------|------------|
-| **Stereo Input 1** | Click the device name and select your physical microphone |
-| **Stereo Input 2** | Leave empty (not used) |
-| **Virtual Input - Voicemeeter VAIO** | Leave as is — DeckCraft will play here |
+| Section                              | What to do                                                |
+| ------------------------------------ | --------------------------------------------------------- |
+| **Stereo Input 1**                   | Click the device name and select your physical microphone |
+| **Stereo Input 2**                   | Leave empty (not used)                                    |
+| **Virtual Input - Voicemeeter VAIO** | Leave as is — DeckCraft will play here                    |
 
 For **each** input column (Stereo Input 1 and Virtual Input), click the **B1** button at the bottom of that column. Make sure **A1**, **A2**, **B2** are **off** (dim).
 
@@ -192,14 +192,14 @@ The audio mixer runs silently in the background without cluttering your taskbar.
 
 ### Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Audio sounds robotic / distorted | Sample rate mismatch | DeckCraft now auto-matches the file's sample rate — rebuild and try again |
+| Symptom                             | Likely cause                          | Fix                                                                                 |
+| ----------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Audio sounds robotic / distorted    | Sample rate mismatch                  | DeckCraft now auto-matches the file's sample rate — rebuild and try again           |
 | Audio sounds low-quality in Discord | Noise suppression / echo cancellation | Disable Krisp, noise suppression, and echo cancellation in Discord's voice settings |
-| No audio in Discord | Wrong input device selected | Set Discord's input to `Voicemeeter Output` |
-| Only voice or only soundboard heard | B1 not enabled on both inputs | Check B1 is lit on both Stereo Input 1 and Virtual Input in Voicemeeter |
-| Voicemeeter window keeps appearing | Closed via Exit instead of X | Close with the X button to minimize to system tray |
-| Voicemeeter asks for donation | Donationware popup (every ~4h) | Close the popup and continue — no license required |
+| No audio in Discord                 | Wrong input device selected           | Set Discord's input to `Voicemeeter Output`                                         |
+| Only voice or only soundboard heard | B1 not enabled on both inputs         | Check B1 is lit on both Stereo Input 1 and Virtual Input in Voicemeeter             |
+| Voicemeeter window keeps appearing  | Closed via Exit instead of X          | Close with the X button to minimize to system tray                                  |
+| Voicemeeter asks for donation       | Donationware popup (every ~4h)        | Close the popup and continue — no license required                                  |
 
 ## Roadmap
 
@@ -209,4 +209,4 @@ The audio mixer runs silently in the background without cluttering your taskbar.
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
