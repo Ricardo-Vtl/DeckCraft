@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 
 opencode.json
+.agents
+AGENTS.md
+IDEA.md
+skills-lock.json
