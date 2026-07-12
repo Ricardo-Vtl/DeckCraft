@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -218,7 +219,102 @@ export default function ActionFields({ actionType, payload, onChange, profiles }
         </div>
       );
 
+    case "audio":
+      return <AudioFields payload={payload} onChange={onChange} />;
+
     default:
       return null;
   }
+}
+
+function AudioFields({ payload, onChange }: { payload: Record<string, string>; onChange: (k: string, v: string) => void }) {
+  const [devices, setDevices] = useState<string[]>([]);
+  const [detected, setDetected] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    invoke<string[]>("list_audio_devices").then((list) => {
+      setDevices(list);
+      setDetected(list.some((n) => n.toUpperCase().includes("VAIO") || n.toUpperCase().includes("VOICEMEETER")));
+    });
+  }, []);
+
+  const showBanner = !detected && !dismissed;
+
+  return (
+    <div className="space-y-3">
+      {/* File browse */}
+      <div className="space-y-1.5">
+        <Label htmlFor="audio-path">Audio file</Label>
+        <div className="flex items-center gap-2">
+          <Input id="audio-path" placeholder="Select a sound file..." value={payload.path ?? ""} onChange={(e) => onChange("path", e.target.value)} className="flex-1" />
+          <Button variant="outline" size="sm" onClick={async () => {
+            const file = await open({
+              multiple: false,
+              filters: [
+                { name: "Audio", extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac", "wma"] },
+                { name: "All files", extensions: ["*"] },
+              ],
+            });
+            if (file) onChange("path", file);
+          }}>
+            Browse
+          </Button>
+        </div>
+        {payload.path && (
+          <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => invoke("play_audio", { path: payload.path, device: payload.device ?? null })}>
+            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Preview
+          </Button>
+        )}
+      </div>
+
+      {/* Device selector */}
+      <div className="space-y-1.5">
+        <Label htmlFor="audio-device">Output device</Label>
+        <select
+          id="audio-device"
+          value={payload.device ?? ""}
+          onChange={(e) => onChange("device", e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-card text-foreground px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="" className="bg-card text-foreground">Default system device</option>
+          {devices.map((d) => (
+            <option key={d} value={d} className="bg-card text-foreground">{d}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Voicemeeter banner */}
+      {showBanner && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-2">
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+            Virtual audio mixer not detected
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+            To play audio through Discord/voice chats while keeping your
+            microphone working at the same time, install{" "}
+            <strong>Voicemeeter Banana</strong> (free, third-party).
+          </p>
+          <ol className="text-xs text-amber-700 dark:text-amber-400 list-decimal ml-4 space-y-0.5">
+            <li>Install Voicemeeter Banana</li>
+            <li>Set "Voicemeeter VAIO" as the output device here</li>
+            <li>In Discord: microphone = "Voicemeeter Output"</li>
+            <li>In Voicemeeter: Hardware Input 1 = your mic</li>
+          </ol>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" className="text-xs" onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl("https://vb-audio.com/Voicemeeter/banana.htm"); }}>
+              Voicemeeter Banana download
+            </Button>
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setDismissed(true)}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

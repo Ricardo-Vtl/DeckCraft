@@ -27,7 +27,8 @@ export interface ButtonConfig {
     | { type: "launch"; path: string }
     | { type: "url"; url: string }
     | { type: "text"; text: string }
-    | { type: "navigate"; target: "next" | "prev" | "profile"; profile?: string };
+    | { type: "navigate"; target: "next" | "prev" | "profile"; profile?: string }
+    | { type: "audio"; path: string; device?: string };
 }
 
 export interface DeviceInfo {

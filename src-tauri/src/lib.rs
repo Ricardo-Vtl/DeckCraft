@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 // ── Shared state ───────────────────────────────────────────────────
@@ -310,18 +310,156 @@ fn disconnect_device(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ── Audio playback ─────────────────────────────────────────────────
+
+use cpal::traits::{DeviceTrait, HostTrait};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+
+struct PlayingAudio {
+    cancel: Arc<AtomicBool>,
+}
+
+struct AudioState {
+    playing: Mutex<HashMap<String, PlayingAudio>>,
+}
+
+#[tauri::command]
+fn list_audio_devices() -> Vec<String> {
+    cpal::default_host()
+        .output_devices()
+        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
+fn find_device(name: Option<&str>) -> Result<cpal::Device, String> {
+    name.and_then(|n| {
+        cpal::default_host().output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(n))
+    }).or_else(|| cpal::default_host().default_output_device())
+      .ok_or_else(|| "No audio device available".to_string())
+}
+
+fn try_open_with(dev: &cpal::Device, rate: u32, channels: u16) -> Result<(OutputStream, OutputStreamHandle), String> {
+    for fmt in [cpal::SampleFormat::F32, cpal::SampleFormat::I16] {
+        let Ok(configs) = dev.supported_output_configs() else { continue };
+        for c in configs {
+            if c.channels() == channels && c.sample_format() == fmt
+                && c.min_sample_rate() <= cpal::SampleRate(rate)
+                && c.max_sample_rate() >= cpal::SampleRate(rate)
+            {
+                if let Ok(ok) = OutputStream::try_from_device_config(dev, c.with_sample_rate(cpal::SampleRate(rate))) {
+                    return Ok(ok);
+                }
+            }
+        }
+    }
+    // fallback: try stereo
+    for fmt in [cpal::SampleFormat::F32, cpal::SampleFormat::I16] {
+        let Ok(configs) = dev.supported_output_configs() else { continue };
+        for c in configs {
+            if c.channels() == 2 && c.sample_format() == fmt
+                && c.min_sample_rate() <= cpal::SampleRate(rate)
+                && c.max_sample_rate() >= cpal::SampleRate(rate)
+            {
+                if let Ok(ok) = OutputStream::try_from_device_config(dev, c.with_sample_rate(cpal::SampleRate(rate))) {
+                    return Ok(ok);
+                }
+            }
+        }
+    }
+    OutputStream::try_from_device(dev).map_err(|e| format!("Audio error: {}", e))
+}
+
+#[tauri::command]
+fn play_audio(path: String, device: Option<String>, state: tauri::State<'_, AudioState>) -> Result<(), String> {
+    let mut playing = state.playing.lock().map_err(|_| "Lock error".to_string())?;
+
+    if let Some(audio) = playing.get(&path) {
+        if !audio.cancel.load(Ordering::SeqCst) {
+            audio.cancel.store(true, Ordering::SeqCst);
+            playing.remove(&path);
+            return Ok(());
+        }
+        playing.remove(&path);
+    }
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_clone = cancel.clone();
+    let path2 = path.clone();
+
+    std::thread::spawn(move || {
+        // Probe the file to get its sample rate & channels before opening output
+        let (rate, channels) = {
+            let file = match std::fs::File::open(&path2) {
+                Ok(f) => f,
+                Err(_) => { cancel_clone.store(true, Ordering::SeqCst); return; }
+            };
+            let source = match Decoder::new(std::io::BufReader::new(file)) {
+                Ok(s) => s,
+                Err(_) => { cancel_clone.store(true, Ordering::SeqCst); return; }
+            };
+            (source.sample_rate(), source.channels())
+        };
+        // drop(source) — the file is re-opened below
+
+        let dev = match find_device(device.as_deref()) {
+            Ok(d) => d,
+            Err(_) => { cancel_clone.store(true, Ordering::SeqCst); return; }
+        };
+        let (_stream, handle) = match try_open_with(&dev, rate, channels) {
+            Ok(s) => s,
+            Err(_) => {
+                // Last attempt: let rodio figure it out
+                let Ok(s) = OutputStream::try_from_device(&dev) else {
+                    cancel_clone.store(true, Ordering::SeqCst); return;
+                };
+                s
+            }
+        };
+        let sink = match Sink::try_new(&handle) {
+            Ok(s) => s,
+            Err(_) => { cancel_clone.store(true, Ordering::SeqCst); return; }
+        };
+        let file = match std::fs::File::open(&path2) {
+            Ok(f) => f,
+            Err(_) => { cancel_clone.store(true, Ordering::SeqCst); return; }
+        };
+        if let Ok(source) = Decoder::new(std::io::BufReader::new(file)) {
+            sink.append(source);
+            while !sink.empty() && !cancel_clone.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+        sink.stop();
+        cancel_clone.store(true, Ordering::SeqCst);
+    });
+
+    playing.insert(path, PlayingAudio { cancel });
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_audio(path: String, state: tauri::State<'_, AudioState>) -> Result<(), String> {
+    let mut playing = state.playing.lock().map_err(|_| "Lock error".to_string())?;
+    if let Some(audio) = playing.remove(&path) {
+        audio.cancel.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
 // ── App entry ──────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState { kill_switch: Arc::new(AtomicBool::new(false)) })
+        .manage(AudioState { playing: Mutex::new(HashMap::new()) })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             scan_apps, type_text, send_keys,
             scan_devices, connect_device, disconnect_device,
             shell_open,
+            list_audio_devices, play_audio, stop_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

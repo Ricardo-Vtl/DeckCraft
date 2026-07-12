@@ -32,6 +32,11 @@ export async function executeAction(
         await invoke("type_text", { text: action.text });
       }
       break;
+    case "audio":
+      if (action.path) {
+        await invoke("play_audio", { path: action.path, device: action.device ?? null });
+      }
+      break;
     case "navigate": {
       const targetId = action.target === "profile"
         ? (action.profile ?? activeProfileId)

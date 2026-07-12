@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   DndContext,
@@ -25,7 +26,7 @@ interface CustomizeViewProps {
   profiles?: Profile[];
 }
 
-type ActionMode = "executable" | "key" | "launch" | "url" | "text" | "navigate";
+type ActionMode = "executable" | "key" | "launch" | "url" | "text" | "navigate" | "audio";
 
 function SwapButton({
   button,
@@ -132,6 +133,19 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
   const [editText, setEditText] = useState("");
   const [editTarget, setEditTarget] = useState<"next" | "prev" | "profile">("next");
   const [editProfileId, setEditProfileId] = useState("");
+  const [editAudioPath, setEditAudioPath] = useState("");
+  const [editAudioDevice, setEditAudioDevice] = useState("");
+  const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [hasVoicemeeter, setHasVoicemeeter] = useState(false);
+  const [voicemeeterDismissed, setVoicemeeterDismissed] = useState(false);
+
+  useEffect(() => {
+    if (editActionMode !== "audio") return;
+    invoke<string[]>("list_audio_devices").then((list) => {
+      setAudioDevices(list);
+      setHasVoicemeeter(list.some((n) => n.toUpperCase().includes("VAIO") || n.toUpperCase().includes("VOICEMEETER")));
+    });
+  }, [editActionMode]);
 
   const selectButton = (id: string) => {
     const btn = buttons.find((b) => b.id === id);
@@ -148,6 +162,8 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
       setEditText("");
       setEditTarget("next");
       setEditProfileId("");
+      setEditAudioPath("");
+      setEditAudioDevice("");
     };
 
     const a = btn.action;
@@ -184,6 +200,12 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
         setEditTarget(a.target);
         setEditProfileId(a.profile ?? "");
         break;
+      case "audio":
+        resetCommon();
+        setEditActionMode("audio");
+        setEditAudioPath(a.path);
+        setEditAudioDevice(a.device ?? "");
+        break;
     }
   };
 
@@ -208,6 +230,9 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
         break;
       case "navigate":
         action = { type: "navigate", target: editTarget, profile: editTarget === "profile" ? editProfileId : undefined };
+        break;
+      case "audio":
+        action = { type: "audio", path: editAudioPath, device: editAudioDevice || undefined };
         break;
     }
     setButtons((prev) => prev.map((b) => (b.id === selectedId ? { ...b, label: editLabel, action } : b)));
@@ -521,6 +546,107 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
                                 <option key={p.id} value={p.id}>{p.name}</option>
                               ))}
                             </select>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </label>
+
+                {/* 7. Play Audio */}
+                <label
+                  data-active={editActionMode === "audio" || undefined}
+                  className={`block cursor-pointer rounded-lg border p-3 transition-colors ${
+                    editActionMode === "audio" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="action-mode"
+                      checked={editActionMode === "audio"}
+                      onChange={() => setEditActionMode("audio")}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Play Audio</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Play a sound file on button press</p>
+                      {editActionMode === "audio" && (
+                        <div className="mt-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              placeholder="Select a sound file..."
+                              value={editAudioPath}
+                              onChange={(e) => setEditAudioPath(e.target.value)}
+                              className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            />
+                            <button
+                              onClick={async () => {
+                                const { open } = await import("@tauri-apps/plugin-dialog");
+                                const file = await open({
+                                  multiple: false,
+                                  filters: [
+                                    { name: "Audio", extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac", "wma"] },
+                                    { name: "All files", extensions: ["*"] },
+                                  ],
+                                });
+                                if (file) setEditAudioPath(file);
+                              }}
+                              className="shrink-0 rounded-md border border-input bg-transparent px-2 h-8 text-xs hover:bg-secondary transition-colors"
+                            >
+                              Browse
+                            </button>
+                          </div>
+                          <select
+                            value={editAudioDevice}
+                            onChange={(e) => setEditAudioDevice(e.target.value)}
+                            className="flex h-8 w-full rounded-md border border-input bg-card text-foreground px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <option value="" className="bg-card text-foreground">Default system device</option>
+                            {audioDevices.map((d) => (
+                              <option key={d} value={d} className="bg-card text-foreground">{d}</option>
+                            ))}
+                          </select>
+                          {editAudioPath && (
+                            <button
+                              onClick={() => invoke("play_audio", { path: editAudioPath, device: editAudioDevice || null })}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              ▶ Preview
+                            </button>
+                          )}
+                          {!hasVoicemeeter && !voicemeeterDismissed && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-2">
+                              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                                Virtual audio mixer not detected
+                              </p>
+                              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                                To play audio through Discord/voice chats while keeping your
+                                microphone working at the same time, install{" "}
+                                <strong>Voicemeeter Banana</strong> (free, third-party) and select
+                                "Voicemeeter VAIO" as the output device above.
+                              </p>
+                              <ol className="text-xs text-amber-700 dark:text-amber-400 list-decimal ml-4 space-y-0.5">
+                                <li>Install Voicemeeter Banana</li>
+                                <li>Set "Voicemeeter VAIO" as the output device here</li>
+                                <li>In Discord: microphone = "Voicemeeter Output"</li>
+                                <li>In Voicemeeter: Hardware Input 1 = your mic</li>
+                              </ol>
+                              <div className="flex gap-2 pt-1">
+                                <button
+                                  onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl("https://vb-audio.com/Voicemeeter/banana.htm"); }}
+                                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/50 dark:text-amber-300 dark:hover:bg-amber-800/50 transition-colors"
+                                >
+                                  Voicemeeter Banana download
+                                </button>
+                                <button
+                                  onClick={() => setVoicemeeterDismissed(true)}
+                                  className="inline-flex items-center justify-center rounded-md px-2.5 py-1 text-xs text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition-colors"
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       )}
