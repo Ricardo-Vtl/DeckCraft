@@ -203,7 +203,7 @@ The audio mixer runs silently in the background without cluttering your taskbar.
 
 ## Roadmap
 
-- **Phase 1 — MVP** ✅ Serial scanning, mapping wizard, drag-and-drop canvas, key recording (e.code), app launching (.exe/.lnk/.url), profiles, SendInput keyboard emulation, CSS-animated press feedback
+- **Phase 1 — MVP** (Completed) Serial scanning, mapping wizard, drag-and-drop canvas, key recording (e.code), app launching (.exe/.lnk/.url), profiles, SendInput keyboard emulation, CSS-animated press feedback
 - **Phase 2 — HID** HID detection and communication, multi-action per button
 - **Phase 3 — Polish** Auto-start, auto-reconnect, themes, i18n
 
