@@ -167,7 +167,7 @@ mod icons {
             let mut rgba = vec![0u8; (w * h * 4) as usize];
             for y in 0..h { for x in 0..w { let o = (y * stride + x * 4) as usize; let d = (y * w + x) * 4; rgba[d as usize] = pixels[o + 2]; rgba[d as usize + 1] = pixels[o + 1]; rgba[d as usize + 2] = pixels[o]; rgba[d as usize + 3] = pixels[o + 3]; } }
             DeleteDC(hdc); DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask);
-            let png = lodepng::encode32(&rgba, w as u32, h as u32).ok()?;
+            let png = lodepng::encode32(&rgba, w as usize, h as usize).ok()?;
             Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
         }
     }
