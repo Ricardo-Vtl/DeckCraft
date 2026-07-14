@@ -29,7 +29,7 @@ export default function ProfileManager({
   };
 
   return (
-    <div className="flex h-full flex-col p-6 max-w-lg">
+    <div className="flex h-full flex-col p-4 md:p-6 max-w-full md:max-w-lg">
       <h2 className="text-lg font-semibold mb-1">Profiles</h2>
       <p className="text-xs text-muted-foreground mb-4">
         Each profile has its own button layout. Switch between them with a button action.

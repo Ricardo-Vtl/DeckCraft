@@ -30,6 +30,15 @@ export default function AppScannerDialog({ open, onOpenChange, onSelect }: AppSc
       .finally(() => setLoading(false));
   }, [open]);
 
+  const handleRescan = () => {
+    setLoading(true);
+    setSearch("");
+    invoke<AppInfo[]>("scan_apps")
+      .then(setApps)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
   const filtered = search.trim()
     ? apps.filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
     : apps;
@@ -41,12 +50,24 @@ export default function AppScannerDialog({ open, onOpenChange, onSelect }: AppSc
           <DialogTitle>Scan system for applications</DialogTitle>
         </DialogHeader>
 
-        <Input
-          placeholder="Search applications..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full"
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search applications..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1"
+          />
+          <button
+            onClick={handleRescan}
+            disabled={loading}
+            className="shrink-0 rounded-md border border-input bg-transparent px-3 h-9 text-xs hover:bg-secondary transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Rescan
+          </button>
+        </div>
 
         <div className="flex-1 overflow-auto min-h-0 -mx-6 px-6">
           {loading ? (
@@ -73,10 +94,14 @@ export default function AppScannerDialog({ open, onOpenChange, onSelect }: AppSc
                   onClick={() => onSelect(app)}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary"
                 >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                    <svg className="size-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
-                    </svg>
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted overflow-hidden">
+                    {app.icon ? (
+                      <img src={app.icon} alt="" className="size-full object-cover" />
+                    ) : (
+                      <svg className="size-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+                      </svg>
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">{app.name}</p>

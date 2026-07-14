@@ -103,10 +103,80 @@ fn type_text(text: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── Icon extraction (Windows) ─────────────────────────────────────
+
+#[cfg(windows)]
+mod icons {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use base64::Engine;
+
+    #[repr(C)]
+    struct SHFILEINFOW { hIcon: isize, iIcon: i32, dwAttributes: u32, szDisplayName: [u16; 260], szTypeName: [u16; 80] }
+
+    const SHGFI_ICON: u32 = 0x100;
+
+    #[link(name = "shell32")]
+    extern "system" { fn SHGetFileInfoW(pszPath: *const u16, dwFileAttributes: u32, psfi: *mut SHFILEINFOW, cbFileInfo: u32, uFlags: u32) -> usize; }
+
+    #[link(name = "user32")]
+    extern "system" { fn DestroyIcon(hIcon: isize) -> i32; fn GetIconInfo(hIcon: isize, piconinfo: *mut ICONINFO) -> i32; }
+
+    #[link(name = "gdi32")]
+    extern "system" { fn CreateCompatibleDC(hdc: isize) -> isize; fn GetDIBits(hdc: isize, hbmp: isize, start: u32, lines: u32, lpvBits: *mut u8, lpbmi: *mut BITMAPINFO, usage: u32) -> i32; fn DeleteDC(hdc: isize) -> i32; fn DeleteObject(h: isize) -> i32; fn GetObjectW(h: isize, c: i32, pv: *mut std::ffi::c_void) -> i32; }
+
+    #[repr(C)]
+    struct ICONINFO { fIcon: i32, xHotspot: u32, yHotspot: u32, hbmMask: isize, hbmColor: isize }
+
+    #[repr(C)]
+    struct BITMAP { bmType: i32, bmWidth: i32, bmHeight: i32, bmWidthBytes: i32, bmPlanes: u16, bmBitsPixel: u16, bmBits: *mut std::ffi::c_void }
+
+    #[repr(C)]
+    struct BITMAPINFOHEADER { biSize: u32, biWidth: i32, biHeight: i32, biPlanes: u16, biBitCount: u16, biCompression: u32, biSizeImage: u32, biXPelsPerMeter: i32, biYPelsPerMeter: i32, biClrUsed: u32, biClrImportant: u32 }
+
+    #[repr(C)]
+    struct BITMAPINFO { bmiHeader: BITMAPINFOHEADER, bmiColors: [u32; 1] }
+
+    pub fn extract(path: &str) -> Option<String> {
+        let wide: Vec<u16> = OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect();
+        let mut shfi: SHFILEINFOW = unsafe { std::mem::zeroed() };
+        if unsafe { SHGetFileInfoW(wide.as_ptr(), 0, &mut shfi, std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_ICON) } == 0 || shfi.hIcon == 0 {
+            return None;
+        }
+        let hicon = shfi.hIcon;
+        let result = to_png(hicon);
+        unsafe { DestroyIcon(hicon); }
+        result
+    }
+
+    fn to_png(hicon: isize) -> Option<String> {
+        unsafe {
+            let mut ii: ICONINFO = std::mem::zeroed();
+            if GetIconInfo(hicon, &mut ii) == 0 { return None; }
+            let mut bm: BITMAP = std::mem::zeroed();
+            if GetObjectW(ii.hbmColor, std::mem::size_of::<BITMAP>() as i32, &mut bm as *mut _ as *mut _) == 0 { DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); return None; }
+            let (w, h) = (bm.bmWidth, bm.bmHeight);
+            if w <= 0 || h <= 0 || w > 256 || h > 256 { DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); return None; }
+            let hdc = CreateCompatibleDC(0);
+            if hdc == 0 { DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); return None; }
+            let mut bmi: BITMAPINFO = std::mem::zeroed();
+            bmi.bmiHeader = BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: w, biHeight: -h, biPlanes: 1, biBitCount: 32, biCompression: 0, biSizeImage: 0, biXPelsPerMeter: 0, biYPelsPerMeter: 0, biClrUsed: 0, biClrImportant: 0 };
+            let stride = ((w * 32 + 31) / 32) * 4;
+            let mut pixels = vec![0u8; (stride * h) as usize];
+            if GetDIBits(hdc, ii.hbmColor, 0, h as u32, pixels.as_mut_ptr(), &mut bmi, 0) == 0 { DeleteDC(hdc); DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask); return None; }
+            let mut rgba = vec![0u8; (w * h * 4) as usize];
+            for y in 0..h { for x in 0..w { let o = (y * stride + x * 4) as usize; let d = (y * w + x) * 4; rgba[d as usize] = pixels[o + 2]; rgba[d as usize + 1] = pixels[o + 1]; rgba[d as usize + 2] = pixels[o]; rgba[d as usize + 3] = pixels[o + 3]; } }
+            DeleteDC(hdc); DeleteObject(ii.hbmColor); DeleteObject(ii.hbmMask);
+            let png = lodepng::encode32(&rgba, w as u32, h as u32).ok()?;
+            Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
+        }
+    }
+}
+
 // ── App scanner ────────────────────────────────────────────────────
 
 #[derive(Serialize)]
-pub struct AppInfo { pub name: String, pub path: String }
+pub struct AppInfo { pub name: String, pub path: String, pub icon: Option<String> }
 
 #[tauri::command]
 fn scan_apps() -> Vec<AppInfo> {
@@ -122,7 +192,9 @@ fn scan_apps() -> Vec<AppInfo> {
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "lnk" || ext == "url" || ext == "exe" {
                     if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
-                        apps.push(AppInfo { name: name.to_string(), path: path.to_string_lossy().to_string() });
+                        let p = path.to_string_lossy().to_string();
+                        let icon = icons::extract(&p);
+                        apps.push(AppInfo { name: name.to_string(), path: p, icon });
                     }
                 }
                 if path.is_dir() {
@@ -132,7 +204,9 @@ fn scan_apps() -> Vec<AppInfo> {
                             let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
                             if ext == "lnk" || ext == "url" || ext == "exe" {
                                 if let Some(name) = p.file_stem().and_then(|n| n.to_str()) {
-                                    apps.push(AppInfo { name: name.to_string(), path: p.to_string_lossy().to_string() });
+                                    let p_str = p.to_string_lossy().to_string();
+                                    let icon = icons::extract(&p_str);
+                                    apps.push(AppInfo { name: name.to_string(), path: p_str, icon });
                                 }
                             }
                         }

@@ -121,6 +121,28 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [cellSize, setCellSize] = useState(96);
+
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el || buttons.length === 0) return;
+    const calc = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const gap = 12;
+      const cols = gridCols;
+      const rows = Math.ceil(buttons.length / cols);
+      if (rows === 0) return;
+      const maxW = (width - (cols - 1) * gap) / cols;
+      const maxH = (height - (rows - 1) * gap) / rows;
+      setCellSize(Math.max(40, Math.floor(Math.min(maxW, maxH))));
+    };
+    calc();
+    const observer = new ResizeObserver(calc);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [gridCols, buttons.length]);
+
   const selected = selectedId ? buttons.find((b) => b.id === selectedId) : null;
 
   const [editLabel, setEditLabel] = useState("");
@@ -263,53 +285,55 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full">
       {/* Grid */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex items-center gap-3 border-b border-border px-6 py-3">
-          <span className="text-sm font-medium">
+        <div className="flex items-center gap-2 md:gap-3 border-b border-border px-4 md:px-6 py-3">
+          <span className="text-sm font-medium whitespace-nowrap">
             {buttons.length} button{buttons.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="hidden md:inline text-xs text-muted-foreground whitespace-nowrap">
             Click a button to configure &middot; Drag to swap
           </span>
 
           {buttons.length > 0 && (
-            <div className="flex items-center gap-1.5 ml-4">
+            <div className="flex items-center gap-1.5 ml-auto md:ml-4">
               <span className="text-xs text-muted-foreground">Grid</span>
               <button onClick={() => setGridCols((c) => Math.max(1, c - 1))} className="flex size-6 items-center justify-center rounded border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">−</button>
               <span className="w-5 text-center text-xs font-medium tabular-nums">{gridCols}</span>
               <button onClick={() => setGridCols((c) => Math.min(12, c + 1))} className="flex size-6 items-center justify-center rounded border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">+</button>
             </div>
           )}
-
-          <div className="flex-1" />
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-hidden">
           {buttons.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full items-center justify-center p-4 md:p-6">
               <p className="text-sm text-muted-foreground">No buttons mapped yet. Go to Workspace first.</p>
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, 96px)` }}>
-                {buttons.map((btn, i) => (
-                  <div key={btn.id} className="group" onClick={() => selectButton(btn.id)}>
-                    <SwapButton button={btn} index={i} lit={btn.id === litId} onLitEnd={() => setLitId(null)} onClick={() => selectButton(btn.id)} />
+            <div className="h-full p-4 md:p-6">
+              <div ref={gridContainerRef} className="flex h-full items-center justify-center overflow-hidden">
+                <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, ${cellSize}px)` }}>
+                    {buttons.map((btn, i) => (
+                      <div key={btn.id} className="group" onClick={() => selectButton(btn.id)}>
+                        <SwapButton button={btn} index={i} lit={btn.id === litId} onLitEnd={() => setLitId(null)} onClick={() => selectButton(btn.id)} />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                  <DragOverlay dropAnimation={null}>
+                    {activeButton ? <DragCard button={activeButton} /> : null}
+                  </DragOverlay>
+                </DndContext>
               </div>
-              <DragOverlay dropAnimation={null}>
-                {activeButton ? <DragCard button={activeButton} /> : null}
-              </DragOverlay>
-            </DndContext>
+            </div>
           )}
         </div>
       </div>
 
       {/* Right inspector — always visible */}
-      <aside className="w-80 shrink-0 border-l border-border bg-card flex flex-col">
+      <aside className="md:w-80 w-full shrink-0 md:border-l border-t md:border-t-0 border-border bg-card flex flex-col md:max-h-none max-h-64">
         {selected ? (
           <>
             <div className="border-b border-border px-4 py-3">
@@ -317,7 +341,7 @@ export default function CustomizeView({ buttons, setButtons, profiles }: Customi
               <p className="text-xs text-muted-foreground truncate">{selected.label}</p>
             </div>
 
-            <div className="flex-1 overflow-auto space-y-5 p-4">
+            <div className="flex-1 overflow-y-auto space-y-5 p-4">
               {/* Label */}
               <div className="space-y-1.5">
                 <Label htmlFor="edit-label">Button label</Label>

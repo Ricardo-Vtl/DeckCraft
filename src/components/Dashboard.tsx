@@ -43,21 +43,21 @@ export default function Dashboard({
   return (
     <div className="flex h-dvh bg-background">
       {/* Left sidebar */}
-      <aside className="flex w-56 flex-col border-r border-border bg-card">
-        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-          <img src="/deckcraft.svg" alt="DeckCraft" className="size-7" />
-          <span className="font-bold text-sm tracking-wide">DeckCraft</span>
+      <aside className="flex w-14 md:w-56 flex-col border-r border-border bg-card">
+        <div className="flex items-center justify-center md:justify-start gap-2.5 border-b border-border px-2 md:px-4 py-3">
+          <img src="/deckcraft.svg" alt="DeckCraft" className="size-7 shrink-0" />
+          <span className="hidden md:block font-bold text-sm tracking-wide">DeckCraft</span>
         </div>
 
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+        <div className="flex items-center justify-center md:justify-start gap-2 border-b border-border px-2 md:px-4 py-2.5">
           <div className="size-2 shrink-0 rounded-full bg-success" />
-          <div className="min-w-0 flex-1">
+          <div className="hidden md:block min-w-0 flex-1">
             <p className="truncate text-xs font-medium text-foreground">{device.name}</p>
             <p className="truncate text-[10px] text-muted-foreground">{device.port}</p>
           </div>
         </div>
 
-        <nav className="flex-1 space-y-0.5 p-2">
+        <nav className="flex-1 space-y-0.5 p-1.5 md:p-2">
           {nav.map((s) => {
             const active = section === s.id;
             return (
@@ -65,7 +65,7 @@ export default function Dashboard({
                 key={s.id}
                 onClick={() => setSection(s.id)}
                 data-active={active || undefined}
-                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                className={`flex w-full items-center justify-center md:justify-start gap-2.5 rounded-md px-2 md:px-3 py-2 text-sm transition-colors ${
                   active
                     ? "bg-secondary text-foreground font-medium"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -74,21 +74,21 @@ export default function Dashboard({
                 <svg className="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d={s.icon} />
                 </svg>
-                {s.label}
+                <span className="hidden md:inline">{s.label}</span>
               </button>
             );
           })}
         </nav>
 
-        <div className="border-t border-border p-2">
+        <div className="border-t border-border p-1.5 md:p-2">
           <button
             onClick={onDisconnect}
-            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            className="flex w-full items-center justify-center md:justify-start gap-2.5 rounded-md px-2 md:px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
           >
             <svg className="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            Disconnect
+            <span className="hidden md:inline">Disconnect</span>
           </button>
         </div>
       </aside>

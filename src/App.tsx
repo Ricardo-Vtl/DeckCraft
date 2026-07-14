@@ -9,6 +9,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 export interface AppInfo {
   name: string;
   path: string;
+  icon?: string;
 }
 
 export interface Profile {

@@ -126,6 +126,28 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [cellSize, setCellSize] = useState(96);
+
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el || buttons.length === 0) return;
+    const calc = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const gap = 12;
+      const cols = gridCols;
+      const rows = Math.ceil(buttons.length / cols);
+      if (rows === 0) return;
+      const maxW = (width - (cols - 1) * gap) / cols;
+      const maxH = (height - (rows - 1) * gap) / rows;
+      setCellSize(Math.max(40, Math.floor(Math.min(maxW, maxH))));
+    };
+    calc();
+    const observer = new ResizeObserver(calc);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [gridCols, buttons.length]);
+
   // Listen for button-press events when in mapping mode
   const mappingRef = useRef(mapping);
   mappingRef.current = mapping;
@@ -191,12 +213,12 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
+      <div className="flex items-center gap-2 md:gap-3 border-b border-border px-4 md:px-6 py-3">
         {mapping ? (
           <div className="flex items-center gap-2">
             <div className="size-2 animate-pulse rounded-full bg-primary" />
             <span className="text-sm font-medium">Listening for buttons...</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="hidden md:inline text-xs text-muted-foreground">
               Press each physical button on your board
             </span>
           </div>
@@ -206,7 +228,7 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
             <span className="text-sm font-medium">
               {buttons.length} button{buttons.length !== 1 ? "s" : ""} mapped
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="hidden md:inline text-xs text-muted-foreground">
               Drag to swap &middot; Click to configure
             </span>
           </div>
@@ -247,9 +269,9 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-hidden">
         {buttons.length === 0 && !mapping ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4">
+          <div className="flex h-full flex-col items-center justify-center gap-4 p-4 md:p-6">
             <div className="flex size-16 items-center justify-center rounded-full bg-secondary">
               <svg className="size-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -266,7 +288,7 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
             </Button>
           </div>
         ) : buttons.length === 0 && mapping ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4">
+          <div className="flex h-full flex-col items-center justify-center gap-4 p-4 md:p-6">
             <div className="size-8 animate-pulse rounded-full bg-primary" />
             <div className="text-center">
               <p className="text-sm font-medium text-foreground">Press a button on your board</p>
@@ -276,31 +298,35 @@ export default function MappingView({ buttons, setButtons, profiles, activeProfi
             </div>
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={pointerWithin}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, 96px)` }}>
-              {buttons.map((btn, i) => (
-                <SwapButton
-                  key={btn.id}
-                  button={btn}
-                  index={i}
-                  dragEnabled={!mapping}
-                  lit={btn.id === litId}
-                  onLitEnd={() => setLitId(null)}
-                  onClick={() => setEditingId(btn.id)}
-                  onDelete={() => handleDelete(btn.id)}
-                />
-              ))}
-            </div>
+          <div className="h-full p-4 md:p-6">
+            <div ref={gridContainerRef} className="flex h-full items-center justify-center overflow-hidden">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={pointerWithin}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, ${cellSize}px)` }}>
+                  {buttons.map((btn, i) => (
+                    <SwapButton
+                      key={btn.id}
+                      button={btn}
+                      index={i}
+                      dragEnabled={!mapping}
+                      lit={btn.id === litId}
+                      onLitEnd={() => setLitId(null)}
+                      onClick={() => setEditingId(btn.id)}
+                      onDelete={() => handleDelete(btn.id)}
+                    />
+                  ))}
+                </div>
 
-            <DragOverlay dropAnimation={null}>
-              {activeButton ? <DragCard button={activeButton} /> : null}
-            </DragOverlay>
-          </DndContext>
+                <DragOverlay dropAnimation={null}>
+                  {activeButton ? <DragCard button={activeButton} /> : null}
+                </DragOverlay>
+              </DndContext>
+            </div>
+          </div>
         )}
       </div>
 
